@@ -329,6 +329,21 @@ footer{font-size:8px;letter-spacing:2px;color:#564b3c;text-align:center;padding:
 </nav>
 
 <script>
+/* ================= STORAGE SHIM =================
+   The original export harness injected window.storage. On a plain web host
+   (e.g. GitHub Pages) it's absent, so fall back to localStorage. Mirrors the
+   harness API: async get(key)->{value}, set(key,value), delete(key). */
+if(typeof window.storage==='undefined'){
+  try{
+    const ls=window.localStorage;
+    ls.setItem('__beatlab_probe','1');ls.removeItem('__beatlab_probe'); // throws if unavailable
+    window.storage={
+      async get(k){const v=ls.getItem(k);return v===null?null:{value:v};},
+      async set(k,v){ls.setItem(k,v);},
+      async delete(k){ls.removeItem(k);},
+    };
+  }catch(e){/* private mode / disabled storage: leave undefined, app no-ops saves */}
+}
 /* ================= AUDIO CORE ================= */
 let AC=null, master={}, chans=[];
 const SEQ_TRACKS=['KICK','808','SNARE','CLAP','HAT','OPEN','TOM L','PERC'];
