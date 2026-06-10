@@ -2,7 +2,7 @@
    Offline support + clean auto-update.
    Bump CACHE_VERSION on every deploy so a new worker installs, precaches the
    fresh shell, and the page can prompt to reload into it. */
-const CACHE_VERSION = 'beatlab-v1';
+const CACHE_VERSION = 'beatlab-v2';
 const SHELL = [
   './',
   './index.html',

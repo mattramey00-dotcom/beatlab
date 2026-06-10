@@ -1224,9 +1224,59 @@ function markDirty(){
   clearTimeout(saveTimer);
   saveTimer=setTimeout(saveState,800);
 }
+const SAVE_VERSION=3;
+/* Stepwise save-format migrations. MIGRATIONS[n] upgrades a v{n} snapshot
+   in place to v{n+1}. Whenever snapshot()'s shape changes, bump SAVE_VERSION
+   and add the matching step here so existing saved beats keep loading.
+   Each step should tolerate partial/old data and never throw on missing keys.
+   Example — if a future v4 split `swing` into per-track values:
+     4 is current → set SAVE_VERSION=4 and add
+     MIGRATIONS[3]=s=>{ s.swingLane=Array(STEPS).fill(s.swing||0); }; */
+const MIGRATIONS={
+  // (none yet — current format is v3, the first versioned schema)
+};
+/* Coerce a saved array to an exact length, truncating or padding with `fill`.
+   Non-arrays become a full default array. */
+function fixLen(arr,len,fill){
+  const a=Array.isArray(arr)?arr.slice(0,len):[];
+  while(a.length<len)a.push(fill);
+  return a;
+}
+/* Repair structural invariants so restore can never crash on a truncated,
+   old, or corrupt save (e.g. a pattern with the wrong number of rows). Only
+   touches fields that are present; absent fields keep the app's full-size
+   defaults. Runs on every load, version-independent. */
+function normalize(s){
+  if(!s||typeof s!=='object')return s;
+  if('pattern' in s){
+    const rows=Array.isArray(s.pattern)?s.pattern:[];
+    s.pattern=Array.from({length:N_DRUM},(_,i)=>fixLen(rows[i],STEPS,false));
+  }
+  if('melody'    in s) s.melody   =fixLen(s.melody,STEPS,null);
+  if('chopLane'  in s) s.chopLane =fixLen(s.chopLane,STEPS,null);
+  if('voiceLane' in s) s.voiceLane=fixLen(s.voiceLane,STEPS,null);
+  if('muted'     in s) s.muted    =fixLen(s.muted,N_DRUM+3,false);
+  return s;
+}
+function migrate(s){
+  if(!s||typeof s!=='object')return s;
+  let v=typeof s.v==='number'?s.v:1;            // pre-versioned saves => treat as v1
+  if(v>SAVE_VERSION){                            // saved by a newer build (e.g. another device)
+    console.warn('beatlab: project is v'+v+' but this build is v'+SAVE_VERSION+' — loading best-effort');
+  }else{
+    while(v<SAVE_VERSION){
+      const step=MIGRATIONS[v];
+      if(step){try{step(s);}catch(e){console.error('beatlab: migration v'+v+'->v'+(v+1)+' failed',e);}}
+      v++; s.v=v;                                // stamp progress so a failed step can't loop
+    }
+  }
+  return normalize(s);                           // always repair structure before restore
+}
+/* expose for debugging a saved project from the console / tests */
+try{window.__beatlab=Object.assign(window.__beatlab||{},{migrate,MIGRATIONS,SAVE_VERSION});}catch(e){}
 function snapshot(){
   const fx={};Object.keys(fxReg).forEach(id=>fx[id]=+fxReg[id].inp.value);
-  return {v:3,bpm,swing,octShift,inst:curInst,filterType,limOn,
+  return {v:SAVE_VERSION,bpm,swing,octShift,inst:curInst,filterType,limOn,
     pattern,melody,chopLane,voiceLane,lastVoiceSlot,muted,trackMix,fx,
     smp:{name:sample.name,bpm:sample.bpm,mode:smpMode,stems}};
 }
@@ -1245,6 +1295,7 @@ async function loadState(){
     if(r&&r.value)s=JSON.parse(r.value);
   }catch(e){/* no saved project yet */}
   if(!s)return;
+  s=migrate(s);   // upgrade older save formats before restoring
   try{
     setBpm(s.bpm||120);
     swing=s.swing||0;swingIn.value=swing;swingOut.textContent=swing+'%';
