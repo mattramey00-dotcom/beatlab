@@ -402,7 +402,7 @@ if(typeof window.storage==='undefined'){
 }
 /* ================= AUDIO CORE ================= */
 let AC=null, master={}, chans=[];
-const SEQ_TRACKS=['KICK','808','SNARE','CLAP','HAT','OPEN','TOM L','PERC'];
+const SEQ_TRACKS=['KICK','808','SNARE','CLAP','HAT','OPEN','TOM L','PERC','RIDE','TAMB','CONGA','TOM M'];
 const N_DRUM=SEQ_TRACKS.length, MEL=N_DRUM, VOXCH=N_DRUM+1, N_CH=N_DRUM+2, CHP=N_DRUM+1, VOX=N_DRUM+2, STEPS=16;
 /* mixer channels (chans/trackMix): drums 0-7 · MEL 8 · VOICE 9
    sequencer lanes (stepEls/muted):  drums 0-7 · MEL 8 · CHP 9 · VOX 10 */
@@ -605,6 +605,12 @@ const INSTRUMENTS={
   'REESE BASS — gritty':  {osc:['sawtooth','sawtooth'],det:14,oct:-1,a:.006,d:.4,s:.7,r:.12,fl:1100,fq:1.2,vol:.4},
   'SQUARE LEAD — punch':  {osc:['square','square'],det:8,a:.004,d:.3,s:.4,r:.1,fl:3800,fq:1.2,vol:.17,sweep:1},
   'AIR PAD — choir':      {osc:['triangle','sawtooth'],det:10,a:.6,d:1.4,s:.7,r:1.1,fl:1300,fq:.6,vol:.15},
+  'HARD SAW — rave':      {osc:['sawtooth','sawtooth'],det:22,a:.005,d:.3,s:.5,r:.12,fl:4200,fq:1.4,vol:.15,sweep:1},
+  'SOFT SINE — mellow':   {osc:['sine','sine'],det:2,a:.02,d:.6,s:.4,r:.3,fl:2400,fq:.6,vol:.3},
+  'MARIMBA — mallet':     {osc:['sine','triangle'],det:0,a:.002,d:.5,s:0,r:.2,fl:4000,fq:1,vol:.3,fm:4.0,fmAmt:120},
+  'PWM STAB — hollow':    {osc:['square','sawtooth'],det:5,a:.004,d:.28,s:.3,r:.1,fl:2600,fq:1.6,vol:.18,sweep:1},
+  'DEEP SUB — clean':     {osc:['sine'],det:0,oct:-1,a:.006,d:.7,s:.8,r:.15,fl:600,fq:.7,vol:.5},
+  'CRYSTAL — shimmer':    {osc:['triangle','sine'],det:7,a:.005,d:1.0,s:.2,r:.5,fl:6500,fq:.6,vol:.22,fm:2.0,fmAmt:200},
 };
 let curInst=Object.keys(INSTRUMENTS)[0];
 const instSel=document.getElementById('instSel');
@@ -1286,7 +1292,7 @@ function markDirty(){
   clearTimeout(saveTimer);
   saveTimer=setTimeout(saveState,800);
 }
-const SAVE_VERSION=3;
+const SAVE_VERSION=4;
 /* Stepwise save-format migrations. MIGRATIONS[n] upgrades a v{n} snapshot
    in place to v{n+1}. Whenever snapshot()'s shape changes, bump SAVE_VERSION
    and add the matching step here so existing saved beats keep loading.
@@ -1295,7 +1301,21 @@ const SAVE_VERSION=3;
      4 is current → set SAVE_VERSION=4 and add
      MIGRATIONS[3]=s=>{ s.swingLane=Array(STEPS).fill(s.swing||0); }; */
 const MIGRATIONS={
-  // (none yet — current format is v3, the first versioned schema)
+  /* v3 -> v4: the sequencer gained 4 drum lanes (RIDE/TAMB/CONGA/TOM M),
+     which shifted the MEL/VOICE entries that sit AFTER the drums in trackMix
+     and muted. Insert 4 default slots at the drum/MEL boundary so an old save
+     keeps its keys + voice mix levels and mutes aligned. (pattern just gains
+     4 empty rows, handled by normalize.) */
+  3:(s)=>{
+    const ADD=4, OLD_DRUM=8;
+    if(Array.isArray(s.trackMix)&&s.trackMix.length===OLD_DRUM+2){
+      const fill=Array.from({length:ADD},()=>defMix());
+      s.trackMix=s.trackMix.slice(0,OLD_DRUM).concat(fill,s.trackMix.slice(OLD_DRUM));
+    }
+    if(Array.isArray(s.muted)&&s.muted.length===OLD_DRUM+3){
+      s.muted=s.muted.slice(0,OLD_DRUM).concat(Array(ADD).fill(false),s.muted.slice(OLD_DRUM));
+    }
+  },
 };
 /* Coerce a saved array to an exact length, truncating or padding with `fill`.
    Non-arrays become a full default array. */
