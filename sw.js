@@ -1,8 +1,9 @@
 /* ================= BEAT LAB SERVICE WORKER =================
-   Offline support + clean auto-update.
-   Bump CACHE_VERSION on every deploy so a new worker installs, precaches the
-   fresh shell, and the page can prompt to reload into it. */
-const CACHE_VERSION = 'beatlab-v2';
+   Offline support + silent auto-update.
+   Bump CACHE_VERSION on every deploy: a new worker installs and precaches the
+   fresh shell in the background, then takes over the next time the app is
+   fully closed and reopened (no prompt, no mid-session reload). */
+const CACHE_VERSION = 'beatlab-v3';
 const SHELL = [
   './',
   './index.html',
@@ -27,11 +28,6 @@ self.addEventListener('activate', e => {
     await Promise.all(keys.filter(k => k !== CACHE_VERSION).map(k => caches.delete(k)));
     await self.clients.claim();
   })());
-});
-
-// The page posts this when the user accepts an update.
-self.addEventListener('message', e => {
-  if (e.data === 'SKIP_WAITING') self.skipWaiting();
 });
 
 self.addEventListener('fetch', e => {
