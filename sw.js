@@ -3,7 +3,7 @@
    Bump CACHE_VERSION on every deploy: a new worker installs and precaches the
    fresh shell in the background, then takes over the next time the app is
    fully closed and reopened (no prompt, no mid-session reload). */
-const CACHE_VERSION = 'beatlab-v6';
+const CACHE_VERSION = 'beatlab-v7';
 const SHELL = [
   './',
   './index.html',

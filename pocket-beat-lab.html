@@ -181,7 +181,7 @@ select{
   width:34px;height:38px;border-radius:7px;border:1px solid var(--line);
   background:var(--inset);color:#6b4a44;font-size:13px;font-family:inherit;flex-shrink:0;
 }
-.step.on{background:var(--qc);box-shadow:0 0 8px color-mix(in srgb,var(--qc) 60%,transparent),inset 0 1px 0 rgba(255,255,255,.4)}
+.step.on{background:linear-gradient(to top,var(--qc) calc(var(--vel,1)*100%),#15110d calc(var(--vel,1)*100%));box-shadow:0 0 8px color-mix(in srgb,var(--qc) 55%,transparent),inset 0 1px 0 rgba(255,255,255,.35)}
 .step.play{outline:2px solid var(--led);outline-offset:1px}
 .poslights{display:grid;grid-template-columns:60px repeat(16,1fr);gap:3px;margin:8px 0 10px}
 .pl{height:5px;border-radius:2px;background:#26211b}
@@ -268,7 +268,7 @@ footer{font-size:8px;letter-spacing:2px;color:#564b3c;text-align:center;padding:
       <div class="swing-wrap"><label>SWING</label><input type="range" id="swing" min="0" max="60" value="0"><output id="swingOut">0%</output></div>
       <button class="chip warn" id="clearSeq">CLEAR</button>
     </div>
-    <div class="eyebrow">PATTERN SEQUENCER · TAP NAME TO MUTE · AUTO-SAVES</div>
+    <div class="eyebrow">TAP STEP TO TOGGLE · DRAG UP/DOWN FOR VELOCITY · TAP NAME TO MUTE</div>
     <div class="poslights" id="poslights"></div>
     <div id="tracks"></div>
     <div class="fxmod" style="margin-top:14px">
@@ -414,6 +414,7 @@ let trackMix=Array.from({length:N_CH},defMix);
    bend       : transient live pitch-bend on held synth notes (springs back to 0) */
 let transpose=0, masterPitch=0, bend=0;
 function mpf(){return Math.pow(2,masterPitch/12);}  // master-pitch frequency factor
+let hitVel=1;  // per-hit velocity scalar; the sequencer sets it per step around each drum trigger
 
 function ensureAudio(){
   if(AC){ if(AC.state==='suspended') AC.resume(); return; }
@@ -523,7 +524,7 @@ function dr_osc(t,o,ch){
   const osc=AC.createOscillator(),g=AC.createGain();
   osc.type=o.type||'sine'; osc.frequency.setValueAtTime(o.f0*k,t);
   if(o.f1) osc.frequency.exponentialRampToValueAtTime(o.f1*k,t+(o.pd||.08));
-  env(g,t,o.a||.002,o.vol||1,o.dec);
+  env(g,t,o.a||.002,(o.vol||1)*hitVel,o.dec);
   let node=osc;
   if(o.filt){const f=AC.createBiquadFilter();f.type=o.filt.type;f.frequency.value=o.filt.f*k;f.Q.value=o.filt.q||1;osc.connect(f);node=f;}
   node.connect(g);g.connect(dest(ch));
@@ -533,7 +534,7 @@ function dr_noise(t,o,ch){
   const k=tn(ch);
   const s=AC.createBufferSource();s.buffer=noiseBuf();s.loop=true;
   const flt=AC.createBiquadFilter();flt.type=o.type||'bandpass';flt.frequency.setValueAtTime(o.f*k,t);flt.Q.value=o.q||1;
-  const g=AC.createGain();env(g,t,o.a||.001,o.vol||1,o.dec);
+  const g=AC.createGain();env(g,t,o.a||.001,(o.vol||1)*hitVel,o.dec);
   s.connect(flt);flt.connect(g);g.connect(dest(ch));
   s.start(t);s.stop(t+(o.a||.001)+o.dec+.05);
 }
@@ -748,6 +749,38 @@ const tracksEl=document.getElementById('tracks'), posEl=document.getElementById(
 posEl.appendChild(document.createElement('div'));
 for(let s=0;s<STEPS;s++){const d=document.createElement('div');d.className='pl';d.dataset.s=s;posEl.appendChild(d);}
 const stepEls=[], tnameEls=[];
+/* per-step velocity (drum lanes): pattern[ti][s] is 0 (off) or a level in (0,1].
+   tap toggles on(full)/off; vertical drag sets the level. */
+const STEP_VEL=1;
+function setStepVel(st,ti,s,vel){
+  vel=Math.max(0,Math.min(1,vel));
+  pattern[ti][s]=vel;
+  st.classList.toggle('on',vel>0);
+  if(vel>0)st.style.setProperty('--vel',vel.toFixed(3));
+}
+function attachDrumStep(st,ti,s,name){
+  let drag=null;
+  st.addEventListener('pointerdown',e=>{
+    e.preventDefault();ensureAudio();
+    try{st.setPointerCapture(e.pointerId);}catch(_){}
+    drag={y:e.clientY,start:+pattern[ti][s]||0,moved:false};
+  });
+  st.addEventListener('pointermove',e=>{
+    if(!drag)return;
+    const dy=drag.y-e.clientY;                 // drag up = louder
+    if(!drag.moved&&Math.abs(dy)>5)drag.moved=true;
+    if(drag.moved)setStepVel(st,ti,s,(drag.start>0?drag.start:.5)+dy/110);
+  });
+  const end=()=>{
+    if(!drag)return;
+    if(!drag.moved){const cur=+pattern[ti][s]||0;setStepVel(st,ti,s,cur>0?0:STEP_VEL);} // tap = toggle
+    const v=+pattern[ti][s]||0;
+    if(v>0&&AC){hitVel=v;DRUMS[name].fn(AC.currentTime,chans[ti]);hitVel=1;}  // audible feedback
+    drag=null;markDirty();
+  };
+  st.addEventListener('pointerup',end);
+  st.addEventListener('pointercancel',()=>{drag=null;});
+}
 function buildTrackRow(ti,name,kind){
   const row=document.createElement('div');row.className='track';
   const tname=document.createElement('div');tname.className='tname';tname.textContent=name;
@@ -760,21 +793,23 @@ function buildTrackRow(ti,name,kind){
   for(let s=0;s<STEPS;s++){
     const st=document.createElement('div');
     st.className='step q'+Math.floor(s/4)+(kind==='mel'?' melstep':'')+(kind==='chop'?' chopstep':'')+(kind==='vox'?' voxstep':'');
-    st.addEventListener('pointerdown',e=>{
-      e.preventDefault();ensureAudio();
-      if(kind==='mel'){
-        if(melody[s]){melody[s]=null;st.classList.remove('on');}
-      }else if(kind==='chop'){
-        chopLane[s]=(chopLane[s]==null)?s:null;
-        st.classList.toggle('on',chopLane[s]!=null);
-      }else if(kind==='vox'){
-        voiceLane[s]=(voiceLane[s]==null)?lastVoiceSlot:null;
-        st.classList.toggle('on',voiceLane[s]!=null);
-      }else{
-        pattern[ti][s]=!pattern[ti][s];st.classList.toggle('on',pattern[ti][s]);
-      }
-      markDirty();
-    });
+    if(kind==='drum'){
+      attachDrumStep(st,ti,s,name);          // tap toggle + drag velocity
+    }else{
+      st.addEventListener('pointerdown',e=>{
+        e.preventDefault();ensureAudio();
+        if(kind==='mel'){
+          if(melody[s]){melody[s]=null;st.classList.remove('on');}
+        }else if(kind==='chop'){
+          chopLane[s]=(chopLane[s]==null)?s:null;
+          st.classList.toggle('on',chopLane[s]!=null);
+        }else if(kind==='vox'){
+          voiceLane[s]=(voiceLane[s]==null)?lastVoiceSlot:null;
+          st.classList.toggle('on',voiceLane[s]!=null);
+        }
+        markDirty();
+      });
+    }
     row.appendChild(st);stepEls[ti][s]=st;
   }
   tracksEl.appendChild(row);
@@ -784,7 +819,7 @@ buildTrackRow(MEL,'KEYS','mel');
 buildTrackRow(CHP,'CHOP','chop');
 buildTrackRow(VOX,'VOICE','vox');
 function refreshGrid(){
-  SEQ_TRACKS.forEach((n,ti)=>pattern[ti].forEach((v,s)=>stepEls[ti][s].classList.toggle('on',!!v)));
+  SEQ_TRACKS.forEach((n,ti)=>pattern[ti].forEach((v,s)=>{const el=stepEls[ti][s],vv=+v||0;el.classList.toggle('on',vv>0);if(vv>0)el.style.setProperty('--vel',vv.toFixed(3));}));
   melody.forEach((v,s)=>stepEls[MEL][s].classList.toggle('on',!!(v&&v.length)));
   chopLane.forEach((v,s)=>stepEls[CHP][s].classList.toggle('on',v!=null));
   voiceLane.forEach((v,s)=>stepEls[VOX][s].classList.toggle('on',v!=null));
@@ -835,7 +870,8 @@ function scheduler(){
 function scheduleStep(step,t){
   playheadStep=step; playheadTime=t;
   SEQ_TRACKS.forEach((name,ti)=>{
-    if(pattern[ti][step]&&!muted[ti])DRUMS[name].fn(t,chans[ti]);
+    const vel=+pattern[ti][step];
+    if(vel>0&&!muted[ti]){hitVel=vel;DRUMS[name].fn(t,chans[ti]);hitVel=1;}
   });
   if(melody[step]&&!muted[MEL]){
     const gate=60/bpm/4*.92;
