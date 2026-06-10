@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#241d16"/>
+      <stop offset="1" stop-color="#0d0a07"/>
+    </linearGradient>
+    <linearGradient id="pad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffc36b"/>
+      <stop offset="1" stop-color="#e8761b"/>
+    </linearGradient>
+    <linearGradient id="padLit" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fff0cf"/>
+      <stop offset="1" stop-color="#ffb347"/>
+    </linearGradient>
+    <filter id="glow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="9" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <!-- studio background tile -->
+  <rect x="0" y="0" width="512" height="512" rx="112" fill="url(#bg)"/>
+  <rect x="6" y="6" width="500" height="500" rx="107" fill="none" stroke="#3a3026" stroke-width="3"/>
+  <rect x="6" y="7" width="500" height="250" rx="107" fill="#ffffff" opacity="0.025"/>
+
+  <!-- 2x2 PADS glyph (amber, top-right pad lit like an active LED) -->
+  <g filter="url(#glow)">
+    <rect x="120" y="120" width="124" height="124" rx="22" fill="url(#pad)"/>
+    <rect x="268" y="120" width="124" height="124" rx="22" fill="url(#padLit)"/>
+    <rect x="120" y="268" width="124" height="124" rx="22" fill="url(#pad)"/>
+    <rect x="268" y="268" width="124" height="124" rx="22" fill="url(#pad)"/>
+  </g>
+</svg>
