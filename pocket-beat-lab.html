@@ -138,7 +138,7 @@ select{
    / keyboard grow into the space (bigger, easier touch targets). The row/kb
    minimums keep them usable on short viewports, where main just scrolls. */
 #page-pads.on,#page-keys.on{display:flex;flex-direction:column;min-height:100%;box-sizing:border-box}
-#page-pads .padgrid{flex:1;grid-template-rows:repeat(5,minmax(72px,1fr));min-height:0}
+#page-pads .padgrid{flex:1;grid-auto-rows:minmax(68px,1fr);min-height:0}
 #page-pads .pad{aspect-ratio:auto;min-height:0}
 #page-keys #kb{flex:1;height:auto;min-height:200px}
 /* sequencer */
@@ -244,7 +244,7 @@ footer{font-size:8px;letter-spacing:2px;color:#564b3c;text-align:center;padding:
 
 <main>
   <section class="page on" id="page-pads">
-    <div class="eyebrow">16 PERFORMANCE PADS · MULTITOUCH</div>
+    <div class="eyebrow">20 DRUM PADS + 4 VOICE · MULTITOUCH</div>
     <div class="padgrid" id="padgrid"></div>
   </section>
 
@@ -253,9 +253,14 @@ footer{font-size:8px;letter-spacing:2px;color:#564b3c;text-align:center;padding:
       <select id="instSel"></select>
       <div class="oct"><button id="octDn">−</button><span id="octVal">OCT 0</span><button id="octUp">+</button></div>
     </div>
+    <div class="keys-ctrl">
+      <div class="oct" style="flex:1"><button id="trDn">−</button><span id="trVal" style="flex:1">TRANSPOSE 0</span><button id="trUp">+</button></div>
+      <div class="oct" style="flex:1"><button id="fnDn">−</button><span id="fnVal" style="flex:1">FINE 0¢</span><button id="fnUp">+</button></div>
+    </div>
     <div class="eyebrow">POLYPHONIC KEYBOARD · SLIDE FOR GLISSANDO</div>
     <div id="kb"></div>
-    <div class="rec-hint">ARM <b>●</b> IN THE TRANSPORT, PRESS PLAY, THEN PERFORM — NOTES ARE QUANTIZED INTO THE TEAL <b style="color:var(--mel)">KEYS</b> LANE OF THE SEQUENCER.</div>
+    <div class="ctlrow bend-row"><label>BEND</label><input type="range" id="bend" min="-200" max="200" value="0" step="1"><output id="bendOut">0</output></div>
+    <div class="rec-hint">ARM <b>●</b> IN THE TRANSPORT, PRESS PLAY, THEN PERFORM — NOTES ARE QUANTIZED INTO THE TEAL <b style="color:var(--mel)">KEYS</b> LANE OF THE SEQUENCER. <b style="color:var(--led)">BEND</b> SPRINGS BACK ON RELEASE.</div>
   </section>
 
   <section class="page" id="page-seq">
@@ -403,6 +408,12 @@ const N_DRUM=SEQ_TRACKS.length, MEL=N_DRUM, VOXCH=N_DRUM+1, N_CH=N_DRUM+2, CHP=N
    sequencer lanes (stepEls/muted):  drums 0-7 · MEL 8 · CHP 9 · VOX 10 */
 const defMix=()=>({vol:90,tune:0,cut:135,dly:0,vrb:0});
 let trackMix=Array.from({length:N_CH},defMix);
+/* ===== pitch modifiers =====
+   transpose  : synth/keys global semitone shift (live + sequenced)
+   masterPitch: whole-kit semitone shift (drums + synth + voice), folded into tn()
+   bend       : transient live pitch-bend on held synth notes (springs back to 0) */
+let transpose=0, masterPitch=0, bend=0;
+function mpf(){return Math.pow(2,masterPitch/12);}  // master-pitch frequency factor
 
 function ensureAudio(){
   if(AC){ if(AC.state==='suspended') AC.resume(); return; }
@@ -506,7 +517,7 @@ function applyMix(i){
 function applyAllMix(){for(let i=0;i<N_CH;i++)applyMix(i);}
 /* ================= DRUM SYNTHS ================= */
 function dest(ch){return (ch&&ch.out)||master.input;}
-function tn(ch){return (ch&&ch.tune)||1;}
+function tn(ch){return ((ch&&ch.tune)||1)*mpf();}  // per-track tune × master pitch
 function dr_osc(t,o,ch){
   const k=tn(ch);
   const osc=AC.createOscillator(),g=AC.createGain();
@@ -543,6 +554,10 @@ const DRUMS={
   CLAVE:{c:'var(--crm)',sub:'WOOD',  fn:(t,ch)=>{dr_osc(t,{f0:1250,dec:.06,vol:.5},ch);}},
   PERC :{c:'var(--crm)',sub:'FM BLIP',fn:(t,ch)=>{dr_osc(t,{type:'sine',f0:880,f1:330,pd:.05,dec:.12,vol:.5},ch);dr_osc(t,{type:'sine',f0:1760,f1:660,pd:.05,dec:.06,vol:.2},ch);}},
   ZAP  :{c:'var(--crm)',sub:'LASER', fn:(t,ch)=>{dr_osc(t,{type:'sawtooth',f0:1900,f1:90,pd:.16,dec:.18,vol:.45,filt:{type:'lowpass',f:4000,q:3}},ch);}},
+  RIDE :{c:'var(--yel)',sub:'PING',  fn:(t,ch)=>{dr_osc(t,{type:'square',f0:3400,dec:.5,vol:.12,filt:{type:'bandpass',f:5200,q:3}},ch);dr_noise(t,{type:'highpass',f:8500,dec:.45,vol:.22},ch);}},
+  TAMB :{c:'var(--yel)',sub:'JINGLE',fn:(t,ch)=>{[0,.014].forEach(d=>dr_noise(t+d,{type:'bandpass',f:7200,q:1.2,dec:.12,vol:.4},ch));}},
+  CONGA:{c:'var(--crm)',sub:'HAND',  fn:(t,ch)=>{dr_osc(t,{f0:300,f1:215,pd:.07,dec:.22,vol:.85},ch);dr_noise(t,{type:'highpass',f:2200,dec:.02,vol:.25},ch);}},
+  'TOM M':{c:'var(--crm)',sub:'MID', fn:(t,ch)=>{dr_osc(t,{f0:190,f1:108,pd:.11,dec:.27,vol:.88},ch);}},
 };
 /* ================= PADS ================= */
 const padgrid=document.getElementById('padgrid');
@@ -584,16 +599,25 @@ const INSTRUMENTS={
   'FM BELL — glass':      {osc:['sine'],det:0, a:.003,d:1.4,s:0, r:.4, fl:6000,fq:.5, vol:.3, fm:3.01, fmAmt:380},
   'RETRO CHIP — square':  {osc:['square'],det:6, a:.002,d:.3,s:.3, r:.08,fl:5000,fq:1,  vol:.18},
   'BRASS STAB — bold':    {osc:['sawtooth','square'],det:7,a:.03,d:.35,s:.4,r:.15,fl:2200,fq:1.5,vol:.22,sweep:1},
+  'WARM ORGAN — drawbar': {osc:['sine','sine'],det:3,a:.01,d:.2,s:.9, r:.1, fl:3400,fq:.7, vol:.24},
+  'SUPER SAW — wide':     {osc:['sawtooth','sawtooth','sawtooth'],det:18,a:.02,d:.5,s:.6,r:.2,fl:3600,fq:1,vol:.15},
+  'GLASS PLUCK — bright': {osc:['triangle','sine'],det:5,a:.002,d:.35,s:0,r:.12,fl:5200,fq:1, vol:.24},
+  'REESE BASS — gritty':  {osc:['sawtooth','sawtooth'],det:14,oct:-1,a:.006,d:.4,s:.7,r:.12,fl:1100,fq:1.2,vol:.4},
+  'SQUARE LEAD — punch':  {osc:['square','square'],det:8,a:.004,d:.3,s:.4,r:.1,fl:3800,fq:1.2,vol:.17,sweep:1},
+  'AIR PAD — choir':      {osc:['triangle','sawtooth'],det:10,a:.6,d:1.4,s:.7,r:1.1,fl:1300,fq:.6,vol:.15},
 };
 let curInst=Object.keys(INSTRUMENTS)[0];
 const instSel=document.getElementById('instSel');
 Object.keys(INSTRUMENTS).forEach(k=>{const o=document.createElement('option');o.value=k;o.textContent=k;instSel.appendChild(o);});
-instSel.onchange=()=>{curInst=instSel.value;markDirty();};
+instSel.onchange=()=>{curInst=instSel.value;refreshFine();markDirty();};
 function noteOn(freq,instName,when,dur){
   ensureAudio();
   const p=INSTRUMENTS[instName||curInst]||INSTRUMENTS[curInst];
   const t=(when!=null)?when:AC.currentTime, v={};
+  v.inst=instName||curInst;
   let f=freq; if(p.oct) f*=Math.pow(2,p.oct);
+  f*=Math.pow(2,transpose/12)*mpf();           // global synth transpose + master pitch
+  const fineC=p.fine||0, bendC=bend*100;        // per-instrument fine + live bend, in cents
   v.g=AC.createGain();
   v.g.gain.setValueAtTime(0.0001,t);
   v.g.gain.linearRampToValueAtTime(p.vol,t+p.a);
@@ -605,7 +629,8 @@ function noteOn(freq,instName,when,dur){
   v.f.connect(v.g); v.g.connect(out);
   v.oscs=p.osc.map((type,i)=>{
     const o=AC.createOscillator();o.type=type;o.frequency.value=f;
-    o.detune.value=(i%2?1:-1)*p.det;
+    o._uni=(i%2?1:-1)*p.det;                    // unison spread (kept separate for live bend)
+    o.detune.value=o._uni+fineC+bendC;
     o.connect(v.f);o.start(t);return o;
   });
   if(p.fm){
@@ -680,6 +705,31 @@ kb.addEventListener('pointercancel',liftKey);
 document.getElementById('octDn').onclick=()=>{octShift=Math.max(-2,octShift-1);refreshOct();markDirty();};
 document.getElementById('octUp').onclick=()=>{octShift=Math.min(2,octShift+1);refreshOct();markDirty();};
 function refreshOct(){document.getElementById('octVal').textContent='OCT '+(octShift>0?'+':'')+octShift;buildKB();}
+/* ===== pitch: transpose · fine · bend ===== */
+const trVal=document.getElementById('trVal'),fnVal=document.getElementById('fnVal');
+function refreshTranspose(){trVal.textContent='TRANSPOSE '+(transpose>0?'+':'')+transpose;}
+function refreshFine(){const f=(INSTRUMENTS[curInst]&&INSTRUMENTS[curInst].fine)||0;fnVal.textContent='FINE '+(f>0?'+':'')+f+'¢';}
+document.getElementById('trDn').onclick=()=>{transpose=Math.max(-24,transpose-1);refreshTranspose();markDirty();};
+document.getElementById('trUp').onclick=()=>{transpose=Math.min(24,transpose+1);refreshTranspose();markDirty();};
+document.getElementById('fnDn').onclick=()=>{INSTRUMENTS[curInst].fine=Math.max(-50,((INSTRUMENTS[curInst].fine)||0)-5);refreshFine();applyBend();markDirty();};
+document.getElementById('fnUp').onclick=()=>{INSTRUMENTS[curInst].fine=Math.min(50,((INSTRUMENTS[curInst].fine)||0)+5);refreshFine();applyBend();markDirty();};
+refreshTranspose();refreshFine();
+/* live bend: retune currently-held synth notes (unison spread + fine + bend) */
+function applyBend(){
+  if(!AC)return;
+  const bc=bend*100;
+  Object.values(activeTouches).forEach(a=>{
+    const v=a.voice; if(!v||!v.oscs)return;
+    const fc=(INSTRUMENTS[v.inst]&&INSTRUMENTS[v.inst].fine)||0;
+    v.oscs.forEach(o=>{if(o._uni!=null)o.detune.value=o._uni+fc+bc;});  // immediate live retune
+  });
+}
+const bendIn=document.getElementById('bend'),bendOut=document.getElementById('bendOut');
+bendIn.addEventListener('input',()=>{bend=(+bendIn.value)/100;bendOut.textContent=(bend>0?'+':'')+bend.toFixed(2);applyBend();});
+function bendRelease(){bendIn.value=0;bend=0;bendOut.textContent='0';applyBend();}  // spring back to center
+bendIn.addEventListener('pointerup',bendRelease);
+bendIn.addEventListener('pointercancel',bendRelease);
+bendIn.addEventListener('change',bendRelease);
 /* ================= SEQUENCER DATA ================= */
 let pattern=SEQ_TRACKS.map(()=>new Array(STEPS).fill(false));
 let melody=new Array(STEPS).fill(null);
@@ -916,7 +966,7 @@ function playVoice(slot,t){
   const ch=chans[VOXCH];
   const sNode=AC.createBufferSource();
   sNode.buffer=buf;
-  sNode.playbackRate.value=(ch&&ch.tune)||1;
+  sNode.playbackRate.value=tn(ch);  // includes master pitch
   sNode.connect(ch?ch.out:master.input);
   sNode.start(t);
 }
@@ -1154,6 +1204,8 @@ function slider(parent,id,label,min,max,val,step,fmt,cb){
   return inp;
 }
 function hzFmt(v){const hz=Math.round(cutHz(v));return hz>=1000?(hz/1000).toFixed(1)+' kHz':hz+' Hz';}
+const mPitch=mod(fxrack,'MASTER PITCH','global tune · drums · keys · voice');
+slider(mPitch,'mPit','PITCH',-12,12,0,1,v=>(v>0?'+':'')+v+' st',v=>masterPitch=v);
 const mDrive=mod(fxrack,'SATURATOR','warm drive');
 slider(mDrive,'drv','AMOUNT',0,100,0,1,v=>v+'%',v=>setDrive(v/100));
 const mEq=mod(fxrack,'EQUALIZER','3-band shelving');
@@ -1286,8 +1338,9 @@ function migrate(s){
 try{window.__beatlab=Object.assign(window.__beatlab||{},{migrate,MIGRATIONS,SAVE_VERSION});}catch(e){}
 function snapshot(){
   const fx={};Object.keys(fxReg).forEach(id=>fx[id]=+fxReg[id].inp.value);
-  return {v:SAVE_VERSION,bpm,swing,octShift,inst:curInst,filterType,limOn,
-    pattern,melody,chopLane,voiceLane,lastVoiceSlot,muted,trackMix,fx,
+  const instFine={};Object.keys(INSTRUMENTS).forEach(k=>{if(INSTRUMENTS[k].fine)instFine[k]=INSTRUMENTS[k].fine;});
+  return {v:SAVE_VERSION,bpm,swing,octShift,transpose,inst:curInst,filterType,limOn,
+    pattern,melody,chopLane,voiceLane,lastVoiceSlot,muted,trackMix,fx,instFine,
     smp:{name:sample.name,bpm:sample.bpm,mode:smpMode,stems}};
 }
 async function saveState(){
@@ -1310,7 +1363,10 @@ async function loadState(){
     setBpm(s.bpm||120);
     swing=s.swing||0;swingIn.value=swing;swingOut.textContent=swing+'%';
     octShift=s.octShift||0;refreshOct();
+    if(typeof s.transpose==='number'){transpose=s.transpose;refreshTranspose();}
+    if(s.instFine)Object.keys(s.instFine).forEach(k=>{if(INSTRUMENTS[k])INSTRUMENTS[k].fine=s.instFine[k];});
     if(s.inst&&INSTRUMENTS[s.inst]){curInst=s.inst;instSel.value=s.inst;}
+    refreshFine();
     if(s.pattern)pattern=s.pattern.map(r=>r.slice(0,STEPS));
     if(s.melody)melody=s.melody;
     if(s.chopLane)chopLane=s.chopLane;
