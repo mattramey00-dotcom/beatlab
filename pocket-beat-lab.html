@@ -331,18 +331,49 @@ footer{font-size:8px;letter-spacing:2px;color:#564b3c;text-align:center;padding:
 <script>
 /* ================= STORAGE SHIM =================
    The original export harness injected window.storage. On a plain web host
-   (e.g. GitHub Pages) it's absent, so fall back to localStorage. Mirrors the
-   harness API: async get(key)->{value}, set(key,value), delete(key). */
+   (e.g. GitHub Pages) it's absent, so provide it here. Backed by IndexedDB
+   (no ~5MB cap, so recorded voice clips persist) with a localStorage fallback
+   for older saves and browsers without IDB. Mirrors the harness API:
+   async get(key)->{value}|null, set(key,value), delete(key). */
 if(typeof window.storage==='undefined'){
-  try{
-    const ls=window.localStorage;
-    ls.setItem('__beatlab_probe','1');ls.removeItem('__beatlab_probe'); // throws if unavailable
-    window.storage={
-      async get(k){const v=ls.getItem(k);return v===null?null:{value:v};},
-      async set(k,v){ls.setItem(k,v);},
-      async delete(k){ls.removeItem(k);},
+  const LS=(()=>{try{const l=window.localStorage;l.setItem('__bl_probe','1');l.removeItem('__bl_probe');return l;}catch(e){return null;}})();
+  const idb=(()=>{
+    if(!window.indexedDB)return null;
+    let dbp=null;
+    const open=()=>dbp||(dbp=new Promise((res,rej)=>{
+      const rq=indexedDB.open('beatlab',1);
+      rq.onupgradeneeded=()=>rq.result.createObjectStore('kv');
+      rq.onsuccess=()=>res(rq.result);
+      rq.onerror=()=>rej(rq.error);
+    }));
+    const tx=(mode,fn)=>open().then(db=>new Promise((res,rej)=>{
+      const t=db.transaction('kv',mode),rq=fn(t.objectStore('kv'));
+      t.oncomplete=()=>res(rq&&rq.result);
+      t.onerror=t.onabort=()=>rej(t.error);
+    }));
+    return {
+      get:k=>tx('readonly',st=>st.get(k)),
+      set:(k,v)=>tx('readwrite',st=>st.put(v,k)),
+      del:k=>tx('readwrite',st=>st.delete(k)),
     };
-  }catch(e){/* private mode / disabled storage: leave undefined, app no-ops saves */}
+  })();
+  if(idb||LS){
+    window.storage={
+      async get(k){
+        if(idb){try{const v=await idb.get(k);if(v!==undefined&&v!==null)return {value:v};}catch(e){}}
+        if(LS){const v=LS.getItem(k);if(v!==null)return {value:v};} // older localStorage saves
+        return null;
+      },
+      async set(k,v){
+        if(idb){try{await idb.set(k,v);if(LS){try{LS.removeItem(k);}catch(e){}}return;}catch(e){}}
+        if(LS)LS.setItem(k,v); // fallback when IDB is unavailable/failed
+      },
+      async delete(k){
+        if(idb){try{await idb.del(k);}catch(e){}}
+        if(LS){try{LS.removeItem(k);}catch(e){}}
+      },
+    };
+  } /* else: no storage at all (private mode) — leave undefined, app no-ops saves */
 }
 /* ================= AUDIO CORE ================= */
 let AC=null, master={}, chans=[];
