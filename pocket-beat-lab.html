@@ -30,7 +30,8 @@ body{
   max-width:560px;margin:0 auto;height:100dvh;
 }
 header{
-  display:flex;align-items:center;gap:8px;padding:10px 12px 8px;
+  display:flex;align-items:center;gap:8px;
+  padding:calc(10px + env(safe-area-inset-top,0px)) calc(12px + env(safe-area-inset-right,0px)) 8px calc(12px + env(safe-area-inset-left,0px));
   border-bottom:1px solid var(--line);background:linear-gradient(#1d1813,#161310);
 }
 .logo{font-family:'Unica One',cursive;font-size:20px;letter-spacing:2px;line-height:.9}
@@ -85,7 +86,7 @@ nav.tabbar button:active .ico{transform:scale(.84)}
 .savedot{width:8px;height:8px;border-radius:50%;background:#564b3c;align-self:center;flex-shrink:0;transition:.3s}
 .savedot.flash{background:var(--grn);box-shadow:0 0 9px var(--grn)}
 main{flex:1;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch}
-.page{display:none;padding:14px;animation:fade .15s}
+.page{display:none;padding:14px 14px 20px;animation:fade .15s}
 .page.on{display:block}
 @keyframes fade{from{opacity:0}to{opacity:1}}
 .eyebrow{font-size:9px;letter-spacing:3px;color:var(--ink-dim);margin:4px 2px 8px}
@@ -131,6 +132,15 @@ select{
 .bk.dn{background:linear-gradient(var(--org),#a3500f)}
 .rec-hint{margin-top:10px;font-size:9px;letter-spacing:1.5px;color:var(--ink-dim);line-height:1.6}
 .rec-hint b{color:var(--red)}
+/* ===== mobile fill: let the short pages use the full screen height =====
+   PADS and KEYS are shorter than a tall phone, which left a dead band above
+   the nav. Make these pages flex columns that fill main, and let the pad grid
+   / keyboard grow into the space (bigger, easier touch targets). The row/kb
+   minimums keep them usable on short viewports, where main just scrolls. */
+#page-pads.on,#page-keys.on{display:flex;flex-direction:column;min-height:100%;box-sizing:border-box}
+#page-pads .padgrid{flex:1;grid-template-rows:repeat(5,minmax(72px,1fr));min-height:0}
+#page-pads .pad{aspect-ratio:auto;min-height:0}
+#page-keys #kb{flex:1;height:auto;min-height:200px}
 /* sequencer */
 .seq-toolbar{display:flex;gap:8px;margin-bottom:10px}
 .chip{
